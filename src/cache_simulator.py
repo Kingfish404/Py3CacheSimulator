@@ -1,18 +1,32 @@
 #!/usr/bin/env python
 
-import yaml, cache, argparse, logging, pprint
+import yaml
+try:
+    from yaml import CLoader as Loader, CDumper as Dumper
+except ImportError:
+    from yaml import Loader, Dumper
+import cache
+import argparse
+import logging
+import pprint
 from terminaltables.other_tables import UnixTable
 
+
 def main():
-    #Set up our arguments
+    # Set up our arguments
     parser = argparse.ArgumentParser(description='Simulate a cache')
-    parser.add_argument('-c','--config-file', help='Configuration file for the memory heirarchy', required=True)
-    parser.add_argument('-t', '--trace-file', help='Tracefile containing instructions', required=True)
-    parser.add_argument('-l', '--log-file', help='Log file name', required=False)
-    parser.add_argument('-p', '--pretty', help='Use pretty colors', required=False, action='store_true')
-    parser.add_argument('-d', '--draw-cache', help='Draw cache layouts', required=False, action='store_true')
+    parser.add_argument('-c', '--config-file',
+                        help='Configuration file for the memory heirarchy', required=True)
+    parser.add_argument('-t', '--trace-file',
+                        help='Tracefile containing instructions', required=True)
+    parser.add_argument('-l', '--log-file',
+                        help='Log file name', required=False)
+    parser.add_argument('-p', '--pretty', help='Use pretty colors',
+                        required=False, action='store_true')
+    parser.add_argument('-d', '--draw-cache', help='Draw cache layouts',
+                        required=False, action='store_true')
     arguments = vars(parser.parse_args())
-    
+
     if arguments['pretty']:
         import colorer
 
@@ -20,7 +34,7 @@ def main():
     if arguments['log_file']:
         log_filename = arguments['log_file']
 
-    #Clear the log file if it exists
+    # Clear the log file if it exists
     with open(log_filename, 'w'):
         pass
 
@@ -34,10 +48,10 @@ def main():
     fh.setFormatter(fh_format)
     sh.setFormatter(fh_format)
     logger.setLevel(logging.INFO)
-    
+
     logger.info('Loading config...')
     config_file = open(arguments['config_file'])
-    configs = yaml.load(config_file)
+    configs = yaml.load(config_file, Loader)
     hierarchy = build_hierarchy(configs, logger)
     logger.info('Memory hierarchy built.')
 
@@ -53,25 +67,27 @@ def main():
             if hierarchy[cache].next_level:
                 print_cache(hierarchy[cache])
 
-#Print the contents of a cache as a table
-#If the table is too long, it will print the first few sets,
-#break, and then print the last set
+# Print the contents of a cache as a table
+# If the table is too long, it will print the first few sets,
+# break, and then print the last set
+
+
 def print_cache(cache):
     table_size = 5
     ways = [""]
     sets = []
     set_indexes = sorted(cache.data.keys())
     if len(cache.data.keys()) > 0:
-        first_key = cache.data.keys()[0]
+        first_key = list(cache.data.keys())[0]
         way_no = 0
-        
-        #Label the columns
+
+        # Label the columns
         for way in range(cache.associativity):
             ways.append("Way " + str(way_no))
             way_no += 1
-        
-        #Print either all the sets if the cache is small, or just a few
-        #sets and then the last set
+
+        # Print either all the sets if the cache is small, or just a few
+        # sets and then the last set
         sets.append(ways)
         if len(set_indexes) > table_size + 4 - 1:
             for s in range(min(table_size, len(set_indexes) - 4)):
@@ -80,19 +96,20 @@ def print_cache(cache):
                 for w in set_ways:
                     temp_way.append(cache.data[set_indexes[s]][w].address)
                 sets.append(temp_way)
-            
+
             for i in range(3):
                 temp_way = ['.']
                 for w in range(cache.associativity):
                     temp_way.append('')
                 sets.append(temp_way)
-            
+
             set_ways = cache.data[set_indexes[len(set_indexes) - 1]].keys()
             temp_way = ['Set ' + str(len(set_indexes) - 1)]
             for w in set_ways:
-                temp_way.append(cache.data[set_indexes[len(set_indexes) - 1]][w].address)
+                temp_way.append(
+                    cache.data[set_indexes[len(set_indexes) - 1]][w].address)
             sets.append(temp_way)
-        else: 
+        else:
             for s in range(len(set_indexes)):
                 set_ways = cache.data[set_indexes[s]].keys()
                 temp_way = ["Set " + str(s)]
@@ -103,38 +120,43 @@ def print_cache(cache):
         table = UnixTable(sets)
         table.title = cache.name
         table.inner_row_border = True
-        print "\n"
-        print table.table
+        print("\n")
+        print(table.table)
 
-#Loop through the instructions in the tracefile and use
-#the given memory hierarchy to find AMAT
+# Loop through the instructions in the tracefile and use
+# the given memory hierarchy to find AMAT
+
+
 def simulate(hierarchy, trace, logger):
     responses = []
-    #We only interface directly with L1. Reads and writes will automatically
-    #interact with lower levels of the hierarchy
+    # We only interface directly with L1. Reads and writes will automatically
+    # interact with lower levels of the hierarchy
     l1 = hierarchy['cache_1']
     for current_step in range(len(trace)):
         instruction = trace[current_step]
         address, op = instruction.split()
-        #Call read for this address on our memory hierarchy
+        # Call read for this address on our memory hierarchy
         if op == 'R':
             logger.info(str(current_step) + ':\tReading ' + address)
             r = l1.read(address, current_step)
-            logger.warning('\thit_list: ' + pprint.pformat(r.hit_list) + '\ttime: ' + str(r.time) + '\n')
+            logger.warning(
+                '\thit_list: ' + pprint.pformat(r.hit_list) + '\ttime: ' + str(r.time) + '\n')
             responses.append(r)
-        #Call write
+        # Call write
         elif op == 'W':
             logger.info(str(current_step) + ':\tWriting ' + address)
             r = l1.write(address, True, current_step)
-            logger.warning('\thit_list: ' + pprint.pformat(r.hit_list) + '\ttime: ' + str(r.time) + '\n')
+            logger.warning(
+                '\thit_list: ' + pprint.pformat(r.hit_list) + '\ttime: ' + str(r.time) + '\n')
             responses.append(r)
         else:
             raise InvalidOpError
     logger.info('Simulation complete')
     analyze_results(hierarchy, responses, logger)
 
+
 def analyze_results(hierarchy, responses, logger):
-    #Parse all the responses from the simulation
+    # Parse all the responses from the simulation
     n_instructions = len(responses)
 
     total_time = 0
@@ -146,14 +168,15 @@ def analyze_results(hierarchy, responses, logger):
     amat = compute_amat(hierarchy['cache_1'], responses, logger)
     logger.info('\nAMATs:\n'+pprint.pformat(amat))
 
+
 def compute_amat(level, responses, logger, results={}):
-    #Check if this is main memory
-    #Main memory has a non-variable hit time
+    # Check if this is main memory
+    # Main memory has a non-variable hit time
     if not level.next_level:
         results[level.name] = level.hit_time
     else:
-        #Find out how many times this level of cache was accessed
-        #And how many of those accesses were misses
+        # Find out how many times this level of cache was accessed
+        # And how many of those accesses were misses
         n_miss = 0
         n_access = 0
         for r in responses:
@@ -164,11 +187,13 @@ def compute_amat(level, responses, logger, results={}):
 
         if n_access > 0:
             miss_rate = float(n_miss)/n_access
-            #Recursively compute the AMAT of this level of cache by computing
-            #the AMAT of lower levels
-            results[level.name] = level.hit_time + miss_rate * compute_amat(level.next_level, responses, logger)[level.next_level.name] #wat
+            # Recursively compute the AMAT of this level of cache by computing
+            # the AMAT of lower levels
+            results[level.name] = level.hit_time + miss_rate * compute_amat(
+                level.next_level, responses, logger)[level.next_level.name]  # wat
         else:
-            results[level.name] = 0 * compute_amat(level.next_level, responses, logger)[level.next_level.name] #trust me, this is good
+            results[level.name] = 0 * compute_amat(level.next_level, responses, logger)[
+                level.next_level.name]  # trust me, this is good
 
         logger.info(level.name)
         logger.info('\tNumber of accesses: ' + str(n_access))
@@ -178,9 +203,9 @@ def compute_amat(level, responses, logger, results={}):
 
 
 def build_hierarchy(configs, logger):
-    #Build the cache hierarchy with the given configuration
+    # Build the cache hierarchy with the given configuration
     hierarchy = {}
-    #Main memory is required
+    # Main memory is required
     main_memory = build_cache(configs, 'mem', None, logger)
     prev_level = main_memory
     hierarchy['mem'] = main_memory
@@ -197,17 +222,19 @@ def build_hierarchy(configs, logger):
     hierarchy['cache_1'] = cache_1
     return hierarchy
 
+
 def build_cache(configs, name, next_level_cache, logger):
     return cache.Cache(name,
-                configs['architecture']['word_size'],
-                configs['architecture']['block_size'],
-                configs[name]['blocks'] if (name != 'mem') else -1,
-                configs[name]['associativity'] if (name != 'mem') else -1,
-                configs[name]['hit_time'],
-                configs[name]['hit_time'],
-                configs['architecture']['write_back'],
-                logger,
-                next_level_cache)
+                       configs['architecture']['word_size'],
+                       configs['architecture']['block_size'],
+                       configs[name]['blocks'] if (name != 'mem') else -1,
+                       configs[name]['associativity'] if (
+                           name != 'mem') else -1,
+                       configs[name]['hit_time'],
+                       configs[name]['hit_time'],
+                       configs['architecture']['write_back'],
+                       logger,
+                       next_level_cache)
 
 
 if __name__ == '__main__':
